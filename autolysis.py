@@ -28,6 +28,7 @@ def load_dataset(file_path):
             encoding = result['encoding']
         print(f"Detected encoding: {encoding}")
         data = pd.read_csv(file_path, encoding=encoding)
+        print(f"Data read successfully from: {file_path}")
         return data
     except Exception as e:
         print(f"Error loading/determining the file encoding: {e}")
@@ -82,6 +83,7 @@ def basic_analysis(csvdata,numerical_cols):
             markdown_content.append("![Correlation Matrix](correlation_matrix.png)")
         else:
             markdown_content.append("No numerical columns available for correlation analysis.")
+        print("Completed Basic Analysis")
         return analysis_summary
     except Exception as e:
         print("Error while performing the basic analysis: %s" % e)
@@ -103,6 +105,7 @@ def outlier_analysis(csvdata,numerical_cols):
                #cleaned_data = csvdata[(csvdata[col] >= lower_bound) & (csvdata[col] <= upper_bound)]
                outlier_report.append(f"- **{col}:** {outliers.shape[0]} outliers")
            markdown_content.extend(outlier_report)
+           print("Completed Outlier Analysis")
            return outliers
        else:
            markdown_content.append("No numerical columns available for outlier detection.")
@@ -138,6 +141,7 @@ def perform_clustering(csvdata,numerical_cols,categorical_cols, n_clusters=3):
                         "kmeans": kmeans,
                         "hier_clust":hier_clust,
         }
+        print("Completed Advanced Analysis")
         return clustering_summary
     except Exception as e:
         print("Error while performing advanced analysis: %s" % e)
@@ -181,6 +185,7 @@ def generate_visualizations(numerical_data,categorical_cols):
             else:
                 # If there are more than 50 distinct values, plot not required.
                 markdown_content.append(f"Skipping distribution plot for {col} because it has {num_distinct} distinct values.")
+        print("Completed Visualizations")
     except Exception as e:
         print("Error while generating visualizations: %s" % e)
         traceback.print_exc()
@@ -192,13 +197,16 @@ def hier_clustering(numerical_data):
         if not numerical_data.empty:
             scaler = StandardScaler()
             scaled_data = scaler.fit_transform(numerical_data)
-            linked = linkage(scaled_data, method='ward')
+            scaled_data_clean = scaled_data[~np.isnan(scaled_data).any(axis=1)]
+            scaled_data_clean = scaled_data_clean[~np.isinf(scaled_data_clean).any(axis=1)]
+            linked = linkage(scaled_data_clean, method='ward')
             plt.figure(figsize=(10, 7))
             dendrogram(linked, truncate_mode='lastp', p=12, leaf_rotation=45, leaf_font_size=10)
             plt.title("Hierarchical Clustering Dendrogram")
             plt.savefig("dendrogram.png")
             plt.close()
             markdown_content.append("![Dendrogram](dendrogram.png)")
+            print("Completed Hierarchical Clustering")
             return linked
     except Exception as e:
         print("Error while performing Hierarchical Clustering: %s" % e)
