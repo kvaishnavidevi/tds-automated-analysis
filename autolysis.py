@@ -240,7 +240,6 @@ def main():
     outliers = outlier_analysis(csvdata,numerical_cols_list)
     clustering_summary = perform_clustering(csvdata,numerical_cols,categorical_cols)
     generate_visualizations(numerical_cols,categorical_cols)
-    linked = hier_clustering(numerical_cols)
     if csvdata is not None:
         #narrative = get_llm_insights(csvdata)
         compile_report()
