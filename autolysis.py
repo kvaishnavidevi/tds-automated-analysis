@@ -1,3 +1,19 @@
+# /// script
+# dependencies = [
+#   "pandas",
+#   "numpy",
+#   "matplotlib",
+#   "seaborn",
+#   "charset_normalizer",
+#   "pathlib",
+#   "scikit-learn",
+#   "scipy",
+#   "plotly",
+#   "markdown",
+#   "openai",
+# ]
+# ///
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -319,7 +335,7 @@ def main():
         llm_request = prepare_llm_request(analysis_summary,adv_analysis_summary)
         final_llm_request = llm_request_shorten(llm_request)
         llm_response = call_llm_for_insights(final_llm_request)
-        compile_report(llm_response)
+        compile_report(llm_request)
         print("Analysis completed successfully.")
     elif csvdata is None:
         print("Error while reading the file. Check the CSV file provided.")
