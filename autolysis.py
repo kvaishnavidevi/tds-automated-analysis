@@ -10,7 +10,7 @@
 #   "scipy",
 #   "plotly",
 #   "markdown",
-#   "openai",
+#   "openai==0.28",
 # ]
 # ///
 
