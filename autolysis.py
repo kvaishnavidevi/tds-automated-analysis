@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-#import plotly.express as px
 import openai
 import sys
 import os
@@ -18,6 +17,9 @@ if len(sys.argv) < 2:
     sys.exit(1)
 file_path = sys.argv[1]
 markdown_content = []
+final_md_content = []
+openai.api_key = os.environ["AIPROXY_TOKEN"]
+openai.api_base = "https://aiproxy.sanand.workers.dev/openai/v1"
 
 # Function to detect encoding, Load and Prepare Dataset
 def load_dataset(file_path):
@@ -34,15 +36,35 @@ def load_dataset(file_path):
         print(f"Error loading/determining the file encoding: {e}")
         return None
 
+# Remove un-necssary data before sending LLM/analysis
+def filtered_dataset(csvdata):
+    try:
+        column_name_keywords = {"url", "image", "website", "link", "rawdata","site","web"}
+        filtered_data = csvdata.loc[:, ~csvdata.columns.str.contains('|'.join(column_name_keywords), case=False)]
+        print("Filtered un-necessary columns")
+        return filtered_data
+    except Exception as e:
+        print(f"Error while filtering columns: {e}")
+        return None
+
+# Fetch sample records
+def sample_dataset(csvdata):
+    try:
+        if len(csvdata.head(50)) >= 50:
+            csvdata_sample = csvdata.sample(50).to_string()
+        else:
+            csvdata_sample = csvdata.to_string()
+        print("Sample records fetch successful")
+        return csvdata_sample
+    except Exception as e:
+        print(f"Error while getting sample records: {e}")
+        return None
+
 # Perform basic analysis
 def basic_analysis(csvdata,numerical_cols):
     try:
         data_datatypes = csvdata.dtypes.to_string()
-        if len(csvdata.head(50)) >= 50:
-            data_sample = csvdata.head(50).to_string()
-        else:
-            data_sample = csvdata.to_string()
-
+        data_sample = sample_dataset(csvdata)
         data_stat = csvdata.describe(include='all').to_string()
         missing_values = csvdata.isnull().sum()
         missing_summary = missing_values[missing_values > 0]
@@ -57,17 +79,17 @@ def basic_analysis(csvdata,numerical_cols):
                 "file_name": file_path,
                 "basic_statistics":data_stat,
         }
-        markdown_content.append("# Dataset Analysis Report")
-        markdown_content.append(f"## CSV File Name: {file_path}")
-        markdown_content.append("## Dataset Overview")
+        markdown_content.append("### Exploratory Data Analysis")
+        markdown_content.append(f"### CSV File Name: {file_path}")
+        markdown_content.append("### Dataset Overview")
         markdown_content.append(f"- **Shape:** {csvdata.shape[0]} rows and {csvdata.shape[1]} columns")
         markdown_content.append("### Columns and Data Types:")
         markdown_content.append(f"```plaintext\n{data_datatypes}\n```")
         markdown_content.append("### Sample Rows:")
         markdown_content.append(f"```plaintext\n{data_sample}\n```")
-        markdown_content.append("## Basic Statistics")
+        markdown_content.append("### Basic Statistics")
         markdown_content.append(f"```plaintext\n{data_stat}\n```")
-        markdown_content.append("## Missing Values")
+        markdown_content.append("### Missing Values")
         if not missing_summary.empty:
             markdown_content.append(f"```plaintext\n{missing_summary.to_string()}\n```")
         else:
@@ -139,7 +161,7 @@ def perform_clustering(csvdata,numerical_cols,categorical_cols, n_clusters=3):
         hier_clust = hier_clustering(numerical_cols)
         clustering_summary = {
                         "kmeans": kmeans,
-                        "hier_clust":hier_clust,
+                        "hierarchical_clustering":hier_clust,
         }
         print("Completed Advanced Analysis")
         return clustering_summary
@@ -156,9 +178,6 @@ def generate_visualizations(numerical_data,categorical_cols):
         plt.savefig("pairplot.png")
         plt.close()
         markdown_content.append("![Pairplot](pairplot.png)")
-#         fig = px.scatter_matrix(numerical_data, dimensions=numerical_data.columns)
-#         fig.write_image("scatter_matrix.png", width=800, height=600, scale=2)
-#         markdown_content.append("![ScatterMatrix](scatter_matrix.png)")
         for col in numerical_data:
             col_display_name = col.replace(" ", "_")
             num_distinct = numerical_data[col].nunique()
@@ -212,37 +231,95 @@ def hier_clustering(numerical_data):
         print("Error while performing Hierarchical Clustering: %s" % e)
         traceback.print_exc()
 
+# Limit 2000 words only.
+def llm_request_shorten(llm_summary):
+    word_split = llm_summary.split()
+    llm_shorten_request = llm_summary
+    if len(word_split)>2000:
+        llm_shorten_request = " ".join(word_split[:2000])
+    # construct as a conv to llm
+    conversation = [
+                {"role": "system", "content": "assume you are a data storyteller based csvfile for data analysis"},
+                {"role": "user", "content": llm_shorten_request},
+    ]
+
+    return conversation
 
 # Interact with LLM
-def get_llm_insights(analysis_summary):
+def prepare_llm_request(analysis_summary,adv_analysis_summary):
     llm_summary_text = f"""
+    Assume that you are data storyteller. Based on the following, write an insightful and engaging narrative:
     The dataset contains {analysis_summary['shape'][0]} rows and {analysis_summary['shape'][1]} columns.
+    Columns: {analysis_summary['columns']}
+    File Name: {analysis_summary['file_name']}
     Key findings include:
     - Missing values: {analysis_summary['missing_values']}
     - Top correlations: {list(analysis_summary['correlation_matrix'])[:5]}
+    - Numerical data summary: {analysis_summary['numerical_summary']}
+    - Basic Statistics: {analysis_summary['basic_statistics']}
+    - Advance Analysis:
+        Kmeans : {adv_analysis_summary['kmeans']}
+        Hierarchical Clustering : {adv_analysis_summary['hierarchical_clustering']}
+    - Outliers: {adv_analysis_summary['outliers']}
+    - Sample Rows:
+        {analysis_summary['sample_rows']}
     """
-    narrative = generate_narrative(llm_summary_text)
-    return narrative
+    return llm_summary_text
 
-# Compile Report
-def compile_report():
-    with open("report.md", "w") as f:
-        f.write("\n".join(markdown_content))
-    print("Report saved to REPORT.md")
+# LLM Call
+def call_llm_for_insights(llm_request, context="csvfile data analysis", max_tokens=2000):
+    try:
+        response = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
+        messages=llm_request,
+        temperature=0.7,
+        max_tokens=max_tokens,
+        )
+        print(f"LLM Response {response}")
+        return response["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"Error occurred while fetching insights from LLM: {e}")
+        traceback.print_exc()
+
+# Compile Final Report
+def compile_report(llm_response):
+    try:
+        final_md_content.append(llm_response)
+        final_md_content.append(markdown_content)
+        flat_list = []
+        for item in final_md_content:
+            if isinstance(item, list):
+                flat_list.append("\n".join(item))
+            else:
+                flat_list.append(str(item))
+        with open("README.md", "w") as f:
+            f.write("\n".join(flat_list))
+        print("Report saved to README.md")
+    except Exception as e:
+        print(f"Error occurred while writing final README.md file: {e}")
+        traceback.print_exc()
 
 # Main Function
 def main():
     csvdata = load_dataset(file_path)
-    numerical_cols = csvdata.select_dtypes(include=np.number)
-    numerical_cols_list = numerical_cols.columns.tolist()
-    categorical_cols = csvdata.select_dtypes(include=['object']).columns
-    analysis_summary = basic_analysis(csvdata,numerical_cols_list)
-    outliers = outlier_analysis(csvdata,numerical_cols_list)
-    clustering_summary = perform_clustering(csvdata,numerical_cols,categorical_cols)
-    generate_visualizations(numerical_cols,categorical_cols)
     if csvdata is not None:
-        #narrative = get_llm_insights(csvdata)
-        compile_report()
+        csvdata = filtered_dataset(csvdata)
+        numerical_cols = csvdata.select_dtypes(include=np.number)
+        numerical_cols_list = numerical_cols.columns.tolist()
+        categorical_cols = csvdata.select_dtypes(include=['object']).columns
+        analysis_summary = basic_analysis(csvdata,numerical_cols_list)
+        outliers = outlier_analysis(csvdata,numerical_cols_list)
+        clustering_summary = perform_clustering(csvdata,numerical_cols,categorical_cols)
+        generate_visualizations(numerical_cols,categorical_cols)
+        adv_analysis_summary = {
+                        "outliers": outliers,
+                        "kmeans": clustering_summary['kmeans'],
+                        "hierarchical_clustering": clustering_summary['hierarchical_clustering'],
+                }
+        llm_request = prepare_llm_request(analysis_summary,adv_analysis_summary)
+        final_llm_request = llm_request_shorten(llm_request)
+        llm_response = call_llm_for_insights(final_llm_request)
+        compile_report(llm_response)
         print("Analysis completed successfully.")
     elif csvdata is None:
         print("Error while reading the file. Check the CSV file provided.")
