@@ -1,0 +1,12 @@
+pandas
+numpy
+matplotlib
+seaborn
+openai
+cchardet
+charset_normalizer
+pathlib
+markdown
+scikit-learn
+scipy
+plotly
