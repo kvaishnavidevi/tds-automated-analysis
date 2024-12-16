@@ -14,6 +14,7 @@
 # ]
 # ///
 
+import time
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -190,36 +191,14 @@ def perform_clustering(csvdata,numerical_cols,categorical_cols, n_clusters=3):
 def generate_visualizations(numerical_data,categorical_cols):
     try:
         markdown_content.append("## Visualizations")
-        sns.pairplot(numerical_data)
+        if(numerical_data.shape[1]>10):
+            numerical_data_filtered = numerical_data[numerical_data.columns[:10]]
+        else:
+            numerical_data_filtered = numerical_data
+        sns.pairplot(numerical_data_filtered)
         plt.savefig("pairplot.png")
         plt.close()
         markdown_content.append("![Pairplot](pairplot.png)")
-        for col in numerical_data:
-            col_display_name = col.replace(" ", "_")
-            num_distinct = numerical_data[col].nunique()
-            if num_distinct <= 50:
-                if num_distinct <= 10:
-                    figsize = (16, 12)
-                elif num_distinct <= 30:
-                    figsize = (14, 10)
-                else:
-                    figsize = (12, 8)
-                category_counts = numerical_data[col].value_counts(normalize=True) * 100
-                min_percentage = category_counts.min()
-                if min_percentage < 1:
-                    min_percentage = 5
-                    plt.figure(figsize=figsize)
-                    sns.barplot(x=category_counts.index, y=category_counts.values)
-                    plt.title(f"Percentage Distribution of {col}")
-                    plt.xticks(rotation=45)
-                    plt.ylabel("Percentage")
-                    plt.ylim(min_percentage, category_counts.max() + 10)
-                    plt.savefig(f"{col_display_name}_percentage_distribution.png")
-                    plt.close()
-                    markdown_content.append(f"![{col} Percentage Distribution]({col_display_name}_percentage_distribution.png)")
-            else:
-                # If there are more than 50 distinct values, plot not required.
-                markdown_content.append(f"Skipping distribution plot for {col} because it has {num_distinct} distinct values.")
         print("Completed Visualizations")
     except Exception as e:
         print("Error while generating visualizations: %s" % e)
@@ -317,6 +296,7 @@ def compile_report(llm_response):
 
 # Main Function
 def main():
+    start_time = time.time()
     csvdata = load_dataset(file_path)
     if csvdata is not None:
         csvdata = filtered_dataset(csvdata)
@@ -335,8 +315,10 @@ def main():
         llm_request = prepare_llm_request(analysis_summary,adv_analysis_summary)
         final_llm_request = llm_request_shorten(llm_request)
         llm_response = call_llm_for_insights(final_llm_request)
-        compile_report(llm_request)
-        print("Analysis completed successfully.")
+        compile_report(llm_response)
+        end_time = time.time()
+        runtime = end_time - start_time
+        print(f"Analysis completed successfully in {runtime} seconds")
     elif csvdata is None:
         print("Error while reading the file. Check the CSV file provided.")
 
